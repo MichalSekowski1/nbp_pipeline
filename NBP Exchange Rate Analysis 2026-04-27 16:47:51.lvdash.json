@@ -1,0 +1,526 @@
+{
+  "datasets": [
+    {
+      "name": "c10ceb8f",
+      "displayName": "nbp_exchange_rates_silver",
+      "config": {
+        "version": "1.1",
+        "source": "workspace.silver.nbp_exchange_rates_silver",
+        "dimensions": [
+          {
+            "name": "currency_code",
+            "expr": "source.currency_code",
+            "displayName": "Currency Code"
+          },
+          {
+            "name": "effectiveDate",
+            "expr": "source.effectiveDate",
+            "displayName": "Effective Date"
+          },
+          {
+            "name": "mid",
+            "expr": "source.mid",
+            "displayName": "Mid"
+          },
+          {
+            "name": "processing_timestamp",
+            "expr": "source.processing_timestamp",
+            "displayName": "Processing Timestamp"
+          }
+        ],
+        "measures": [
+          {
+            "name": "count",
+            "expr": "COUNT(*)",
+            "comment": "Represents the total number of rows in the dataset. Use this measure to count all",
+            "displayName": "Count"
+          }
+        ]
+      }
+    },
+    {
+      "name": "biggest_appreciation",
+      "displayName": "Biggest One-Day Appreciation (Growth)",
+      "queryLines": [
+        "WITH daily_changes AS (\n",
+        "  SELECT\n",
+        "    currency_code,\n",
+        "    effectiveDate,\n",
+        "    mid,\n",
+        "    LAG(mid) OVER (PARTITION BY currency_code ORDER BY effectiveDate) as prev_mid,\n",
+        "    mid - LAG(mid) OVER (PARTITION BY currency_code ORDER BY effectiveDate) as daily_change\n",
+        "  FROM\n",
+        "    workspace.silver.nbp_exchange_rates_silver\n",
+        "),\n",
+        "ranked_changes AS (\n",
+        "  SELECT\n",
+        "    currency_code,\n",
+        "    effectiveDate,\n",
+        "    mid,\n",
+        "    prev_mid,\n",
+        "    daily_change,\n",
+        "    ROW_NUMBER() OVER (PARTITION BY currency_code ORDER BY daily_change DESC) as rank\n",
+        "  FROM\n",
+        "    daily_changes\n",
+        "  WHERE\n",
+        "    daily_change IS NOT NULL\n",
+        ")\n",
+        "SELECT\n",
+        "  currency_code as `Currency`,\n",
+        "  effectiveDate as `Date`,\n",
+        "  prev_mid as `Previous Rate`,\n",
+        "  mid as `New Rate`,\n",
+        "  daily_change as `Change (Appreciation)`\n",
+        "FROM\n",
+        "  ranked_changes\n",
+        "WHERE\n",
+        "  rank = 1\n",
+        "ORDER BY\n",
+        "  currency_code"
+      ]
+    },
+    {
+      "name": "biggest_depreciation",
+      "displayName": "Biggest One-Day Depreciation (Fall)",
+      "queryLines": [
+        "WITH daily_changes AS (\n",
+        "  SELECT\n",
+        "    currency_code,\n",
+        "    effectiveDate,\n",
+        "    mid,\n",
+        "    LAG(mid) OVER (PARTITION BY currency_code ORDER BY effectiveDate) as prev_mid,\n",
+        "    mid - LAG(mid) OVER (PARTITION BY currency_code ORDER BY effectiveDate) as daily_change\n",
+        "  FROM\n",
+        "    workspace.silver.nbp_exchange_rates_silver\n",
+        "),\n",
+        "ranked_changes AS (\n",
+        "  SELECT\n",
+        "    currency_code,\n",
+        "    effectiveDate,\n",
+        "    mid,\n",
+        "    prev_mid,\n",
+        "    daily_change,\n",
+        "    ROW_NUMBER() OVER (PARTITION BY currency_code ORDER BY daily_change ASC) as rank\n",
+        "  FROM\n",
+        "    daily_changes\n",
+        "  WHERE\n",
+        "    daily_change IS NOT NULL\n",
+        ")\n",
+        "SELECT\n",
+        "  currency_code as `Currency`,\n",
+        "  effectiveDate as `Date`,\n",
+        "  prev_mid as `Previous Rate`,\n",
+        "  mid as `New Rate`,\n",
+        "  daily_change as `Change (Depreciation)`\n",
+        "FROM\n",
+        "  ranked_changes\n",
+        "WHERE\n",
+        "  rank = 1\n",
+        "ORDER BY\n",
+        "  currency_code"
+      ]
+    },
+    {
+      "name": "highest_rates",
+      "displayName": "Highest Historical Rates (Highest Appreciation)",
+      "queryLines": [
+        "WITH ranked_rates AS (\n",
+        "  SELECT\n",
+        "    currency_code,\n",
+        "    effectiveDate,\n",
+        "    mid,\n",
+        "    ROW_NUMBER() OVER (PARTITION BY currency_code ORDER BY mid DESC) as rank\n",
+        "  FROM\n",
+        "    workspace.silver.nbp_exchange_rates_silver\n",
+        ")\n",
+        "SELECT\n",
+        "  currency_code as `Currency`,\n",
+        "  effectiveDate as `Date of Highest Rate`,\n",
+        "  mid as `Highest Rate (PLN)`\n",
+        "FROM\n",
+        "  ranked_rates\n",
+        "WHERE\n",
+        "  rank = 1\n",
+        "ORDER BY\n",
+        "  currency_code"
+      ]
+    },
+    {
+      "name": "lowest_rates",
+      "displayName": "Lowest Historical Rates (Highest Depreciation)",
+      "queryLines": [
+        "WITH ranked_rates AS (\n",
+        "  SELECT\n",
+        "    currency_code,\n",
+        "    effectiveDate,\n",
+        "    mid,\n",
+        "    ROW_NUMBER() OVER (PARTITION BY currency_code ORDER BY mid ASC) as rank\n",
+        "  FROM\n",
+        "    workspace.silver.nbp_exchange_rates_silver\n",
+        ")\n",
+        "SELECT\n",
+        "  currency_code as `Currency`,\n",
+        "  effectiveDate as `Date of Lowest Rate`,\n",
+        "  mid as `Lowest Rate (PLN)`\n",
+        "FROM\n",
+        "  ranked_rates\n",
+        "WHERE\n",
+        "  rank = 1\n",
+        "ORDER BY\n",
+        "  currency_code"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "52cfbcfe",
+      "displayName": "Main page",
+      "layout": [
+        {
+          "widget": {
+            "name": "exchange_rate_line",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "c10ceb8f",
+                  "fields": [
+                    {
+                      "name": "currency_code",
+                      "expression": "`currency_code`"
+                    },
+                    {
+                      "name": "effectiveDate",
+                      "expression": "`effectiveDate`"
+                    },
+                    {
+                      "name": "avg(mid)",
+                      "expression": "AVG(`mid`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Exchange Rate Dynamics",
+                "showTitle": true
+              },
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "effectiveDate",
+                  "displayName": "Effective Date",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "avg(mid)",
+                  "displayName": "Exchange Rate (PLN)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "currency_code",
+                  "legend": {
+                    "position": "right"
+                  },
+                  "displayName": "Currency",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 8
+          }
+        },
+        {
+          "widget": {
+            "name": "lowest_rates_table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "lowest_rates",
+                  "fields": [
+                    {
+                      "name": "Currency",
+                      "expression": "`Currency`"
+                    },
+                    {
+                      "name": "Date of Lowest Rate",
+                      "expression": "`Date of Lowest Rate`"
+                    },
+                    {
+                      "name": "Lowest Rate (PLN)",
+                      "expression": "`Lowest Rate (PLN)`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Lowest Historical Rates (Highest Depreciation)",
+                "showTitle": true
+              },
+              "rowsPerPage": 25,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "Currency",
+                    "displayName": "Currency"
+                  },
+                  {
+                    "fieldName": "Date of Lowest Rate",
+                    "displayName": "Date of Lowest Rate"
+                  },
+                  {
+                    "fieldName": "Lowest Rate (PLN)",
+                    "displayName": "Lowest Rate (PLN)"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 8,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "highest_rates_table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "highest_rates",
+                  "fields": [
+                    {
+                      "name": "Currency",
+                      "expression": "`Currency`"
+                    },
+                    {
+                      "name": "Date of Highest Rate",
+                      "expression": "`Date of Highest Rate`"
+                    },
+                    {
+                      "name": "Highest Rate (PLN)",
+                      "expression": "`Highest Rate (PLN)`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Highest Historical Rates (Highest Appreciation)",
+                "showTitle": true
+              },
+              "rowsPerPage": 25,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "Currency",
+                    "displayName": "Currency"
+                  },
+                  {
+                    "fieldName": "Date of Highest Rate",
+                    "displayName": "Date of Highest Rate"
+                  },
+                  {
+                    "fieldName": "Highest Rate (PLN)",
+                    "displayName": "Highest Rate (PLN)"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 8,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "depreciation_table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "biggest_depreciation",
+                  "fields": [
+                    {
+                      "name": "Currency",
+                      "expression": "`Currency`"
+                    },
+                    {
+                      "name": "Date",
+                      "expression": "`Date`"
+                    },
+                    {
+                      "name": "Previous Rate",
+                      "expression": "`Previous Rate`"
+                    },
+                    {
+                      "name": "New Rate",
+                      "expression": "`New Rate`"
+                    },
+                    {
+                      "name": "Change (Depreciation)",
+                      "expression": "`Change (Depreciation)`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Biggest One-Day Depreciation (Fall)",
+                "showTitle": true
+              },
+              "rowsPerPage": 25,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "Currency",
+                    "displayName": "Currency"
+                  },
+                  {
+                    "fieldName": "Date",
+                    "displayName": "Date"
+                  },
+                  {
+                    "fieldName": "Previous Rate",
+                    "displayName": "Previous Rate"
+                  },
+                  {
+                    "fieldName": "New Rate",
+                    "displayName": "New Rate"
+                  },
+                  {
+                    "fieldName": "Change (Depreciation)",
+                    "displayName": "Change"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 13,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "appreciation_table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "biggest_appreciation",
+                  "fields": [
+                    {
+                      "name": "Currency",
+                      "expression": "`Currency`"
+                    },
+                    {
+                      "name": "Date",
+                      "expression": "`Date`"
+                    },
+                    {
+                      "name": "Previous Rate",
+                      "expression": "`Previous Rate`"
+                    },
+                    {
+                      "name": "New Rate",
+                      "expression": "`New Rate`"
+                    },
+                    {
+                      "name": "Change (Appreciation)",
+                      "expression": "`Change (Appreciation)`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Biggest One-Day Appreciation (Growth)",
+                "showTitle": true
+              },
+              "rowsPerPage": 25,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "Currency",
+                    "displayName": "Currency"
+                  },
+                  {
+                    "fieldName": "Date",
+                    "displayName": "Date"
+                  },
+                  {
+                    "fieldName": "Previous Rate",
+                    "displayName": "Previous Rate"
+                  },
+                  {
+                    "fieldName": "New Rate",
+                    "displayName": "New Rate"
+                  },
+                  {
+                    "fieldName": "Change (Appreciation)",
+                    "displayName": "Change"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 13,
+            "width": 6,
+            "height": 5
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    },
+    "applyModeEnabled": false
+  }
+}
