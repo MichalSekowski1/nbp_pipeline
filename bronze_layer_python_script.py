@@ -3,7 +3,7 @@ Bronze Layer: NBP Exchange Rates Ingestion
 Fetches exchange rate data from NBP API and writes to Bronze Delta table
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 import requests
 import time
@@ -37,6 +37,62 @@ QUALITY_THRESHOLDS = {
 
 print(f"Target table: {FULL_TABLE_NAME}")
 print(f"Spark version: {spark.version}")
+
+
+def get_last_ingestion_date(table_name):
+    """
+    Get the most recent effectiveDate from the existing table.
+    Returns None if table doesn't exist or is empty.
+    """
+    try:
+        existing_df = spark.table(table_name)
+        max_date_row = existing_df.agg(spark_max('effectiveDate').alias('max_date')).collect()[0]
+        max_date_str = max_date_row['max_date']
+        
+        if max_date_str:
+            # Convert string to datetime
+            max_date = datetime.strptime(max_date_str, '%Y-%m-%d')
+            print(f"✓ Found existing data. Last date in table: {max_date.strftime('%Y-%m-%d')}")
+            return max_date
+        else:
+            print("⚠ Table exists but is empty")
+            return None
+            
+    except Exception as e:
+        print(f"⚠ Table does not exist or cannot be read: {str(e)}")
+        return None
+
+
+def determine_date_range(years_back):
+    """
+    Determine the date range to fetch based on existing data.
+    Returns (start_date, end_date, is_incremental)
+    """
+    today = datetime.now()
+    last_date = get_last_ingestion_date(FULL_TABLE_NAME)
+    
+    if last_date:
+        # Incremental load: fetch from day after last date to today
+        start_date = last_date + timedelta(days=1)
+        
+        # If already up to date, no new data to fetch
+        if start_date >= today:
+            print(f"✓ Table is already up to date (last date: {last_date.strftime('%Y-%m-%d')})")
+            return None, None, True
+        
+        print(f"\n{'='*60}")
+        print("INCREMENTAL LOAD MODE")
+        print(f"{'='*60}")
+        print(f"Loading new data from {start_date.strftime('%Y-%m-%d')} to {today.strftime('%Y-%m-%d')}")
+        return start_date, today, True
+    else:
+        # Full load: fetch entire history
+        start_date = today - relativedelta(years=years_back)
+        print(f"\n{'='*60}")
+        print("FULL LOAD MODE (First Run)")
+        print(f"{'='*60}")
+        print(f"Loading historical data from {start_date.strftime('%Y-%m-%d')} to {today.strftime('%Y-%m-%d')}")
+        return start_date, today, False
 
 
 def fetch_exchange_rates(currency_code, start_date, end_date, max_retries=3):
@@ -403,15 +459,19 @@ def main():
     Main execution function
     """
     try:
-        # Calculate date range
-        today = datetime.now()
-        start_date = today - relativedelta(years=YEARS_BACK)
+        # Determine date range based on existing data (incremental or full load)
+        start_date, end_date, is_incremental = determine_date_range(YEARS_BACK)
         
-        print(f"Fetching data from {start_date.strftime('%Y-%m-%d')} to {today.strftime('%Y-%m-%d')}")
+        # If already up to date, exit gracefully
+        if start_date is None:
+            print("\n✓ No new data to ingest. Pipeline complete!")
+            return
+        
+        print(f"Fetching data from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
         print(f"Currencies: {', '.join(CURRENCIES)}")
         
         # Collect data from API
-        data = collect_exchange_rate_data(CURRENCIES, start_date, today)
+        data = collect_exchange_rate_data(CURRENCIES, start_date, end_date)
         
         if data:
             # Write to Bronze table with quality checks
@@ -421,7 +481,9 @@ def main():
                 write_mode='append',
                 run_quality_checks=True
             )
-            print("\n✓ Bronze layer ingestion completed successfully!")
+            
+            ingestion_mode = "incremental" if is_incremental else "full"
+            print(f"\n✓ Bronze layer ingestion completed successfully ({ingestion_mode} mode)!")
         else:
             print("\n⚠ No data collected - check API status and date ranges")
             
